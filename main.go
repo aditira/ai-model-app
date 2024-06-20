@@ -33,5 +33,6 @@ func main() {
 
 	r.POST("/mask", handler.MaskModel)
 	r.GET("/translate", handler.TranslateModel)
+	r.GET("/chat", handler.ChatModel)
 	r.Run()
 }

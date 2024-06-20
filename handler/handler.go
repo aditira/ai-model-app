@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"net/http"
 
@@ -15,12 +14,61 @@ import (
 type Handler interface {
 	MaskModel(c *gin.Context)
 	TranslateModel(c *gin.Context)
+	ChatModel(c *gin.Context)
 }
 
 type handler struct {
-	t        *template.Template
-	service  service.Service
-	template string
+	t       *template.Template
+	service service.Service
+}
+
+func (h *handler) ChatModel(c *gin.Context) {
+	data := model.Payload{
+		Inputs: c.Query("message"),
+	}
+
+	template := "chat.html"
+
+	if data.Inputs == "" {
+		h.t.ExecuteTemplate(c.Writer, template, gin.H{
+			"Data": nil,
+			"Err":  "message cannot be empty",
+		})
+		return
+	}
+
+	respBody, err := h.service.RequestHuggingface(data, "HuggingFaceH4/zephyr-7b-beta")
+	if err != nil {
+		h.t.ExecuteTemplate(c.Writer, template, gin.H{
+			"Data": nil,
+			"Err":  err.Error(),
+		})
+		return
+	}
+
+	var responseJSON []dto.Chat
+	err = json.Unmarshal(respBody, &responseJSON)
+	if err != nil {
+		var responseError dto.Error
+		err = json.Unmarshal(respBody, &responseError)
+		if err != nil {
+			h.t.ExecuteTemplate(c.Writer, template, gin.H{
+				"Data": nil,
+				"Err":  err.Error(),
+			})
+			return
+		}
+		h.t.ExecuteTemplate(c.Writer, template, gin.H{
+			"Data": nil,
+			"Err":  responseError.Error,
+		})
+		return
+	}
+
+	h.t.ExecuteTemplate(c.Writer, template, gin.H{
+		"Data": responseJSON,
+		"Err":  nil,
+	})
 }
 
 func (h *handler) TranslateModel(c *gin.Context) {
@@ -28,10 +76,10 @@ func (h *handler) TranslateModel(c *gin.Context) {
 		Inputs: c.Query("message"),
 	}
 
-	fmt.Println(data)
+	template := "translate.html"
 
 	if data.Inputs == "" {
-		h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+		h.t.ExecuteTemplate(c.Writer, template, gin.H{
 			"Data": nil,
 			"Err":  "message cannot be empty",
 		})
@@ -40,7 +88,7 @@ func (h *handler) TranslateModel(c *gin.Context) {
 
 	respBody, err := h.service.RequestHuggingface(data, "Helsinki-NLP/opus-mt-id-en")
 	if err != nil {
-		h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+		h.t.ExecuteTemplate(c.Writer, template, gin.H{
 			"Data": nil,
 			"Err":  err.Error(),
 		})
@@ -53,20 +101,20 @@ func (h *handler) TranslateModel(c *gin.Context) {
 		var responseError dto.Error
 		err = json.Unmarshal(respBody, &responseError)
 		if err != nil {
-			h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+			h.t.ExecuteTemplate(c.Writer, template, gin.H{
 				"Data": nil,
 				"Err":  err.Error(),
 			})
 			return
 		}
-		h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+		h.t.ExecuteTemplate(c.Writer, template, gin.H{
 			"Data": nil,
 			"Err":  responseError.Error,
 		})
 		return
 	}
 
-	h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+	h.t.ExecuteTemplate(c.Writer, template, gin.H{
 		"Data": responseJSON,
 		"Err":  nil,
 	})
@@ -97,8 +145,7 @@ func (h *handler) MaskModel(c *gin.Context) {
 
 func NewHandler(t *template.Template, service service.Service) Handler {
 	return &handler{
-		t:        t,
-		service:  service,
-		template: "translate.html",
+		t:       t,
+		service: service,
 	}
 }
