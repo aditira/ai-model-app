@@ -2,12 +2,15 @@ package service
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
+
+	"github.com/ai-model-app/model"
 )
 
 type Service interface {
-	RequestHuggingface(payload []byte, modelName string) ([]byte, error)
+	RequestHuggingface(payload model.Payload, modelName string) ([]byte, error)
 }
 
 type service struct {
@@ -15,8 +18,13 @@ type service struct {
 }
 
 // requestHuggingface implements Service.
-func (s *service) RequestHuggingface(payload []byte, modelName string) ([]byte, error) {
-	body := bytes.NewReader(payload)
+func (s *service) RequestHuggingface(payload model.Payload, modelName string) ([]byte, error) {
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	body := bytes.NewReader(payloadBytes)
 
 	req, err := http.NewRequest("POST", "https://api-inference.huggingface.co/models/"+modelName, body)
 	if err != nil {

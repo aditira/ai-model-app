@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 
 	"github.com/ai-model-app/model"
@@ -17,39 +18,58 @@ type Handler interface {
 }
 
 type handler struct {
-	service service.Service
+	t        *template.Template
+	service  service.Service
+	template string
 }
 
-// handlerTranslateModel implements Handler.
 func (h *handler) TranslateModel(c *gin.Context) {
-	data := model.Payload{}
-	if err := c.ShouldBindJSON(&data); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	data := model.Payload{
+		Inputs: c.Query("message"),
+	}
+
+	fmt.Println(data)
+
+	if data.Inputs == "" {
+		h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+			"Data": nil,
+			"Err":  "message cannot be empty",
+		})
 		return
 	}
 
-	payloadBytes, err := json.Marshal(data)
+	respBody, err := h.service.RequestHuggingface(data, "Helsinki-NLP/opus-mt-id-en")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error occurred while encoding payload": err.Error()})
+		h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+			"Data": nil,
+			"Err":  err.Error(),
+		})
 		return
 	}
-
-	respBody, err := h.service.RequestHuggingface(payloadBytes, "Helsinki-NLP/opus-mt-id-en")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error internal server:": err.Error()})
-		return
-	}
-
-	fmt.Println("Resp: ", string(respBody))
 
 	var responseJSON []dto.Translation
 	err = json.Unmarshal(respBody, &responseJSON)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error occurred while unmarshalling response body:": err.Error()})
+		var responseError dto.Error
+		err = json.Unmarshal(respBody, &responseError)
+		if err != nil {
+			h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+				"Data": nil,
+				"Err":  err.Error(),
+			})
+			return
+		}
+		h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+			"Data": nil,
+			"Err":  responseError.Error,
+		})
 		return
 	}
 
-	c.JSON(http.StatusOK, responseJSON)
+	h.t.ExecuteTemplate(c.Writer, h.template, gin.H{
+		"Data": responseJSON,
+		"Err":  nil,
+	})
 }
 
 func (h *handler) MaskModel(c *gin.Context) {
@@ -59,31 +79,26 @@ func (h *handler) MaskModel(c *gin.Context) {
 		return
 	}
 
-	payloadBytes, err := json.Marshal(data)
+	respBody, err := h.service.RequestHuggingface(data, "bert-base-uncased")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error occurred while encoding payload": err.Error()})
-		return
-	}
-
-	// Interaksi ke Huggingface via Service
-	respBody, err := h.service.RequestHuggingface(payloadBytes, "bert-base-uncased")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error internal server:": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	var responseJSON []map[string]interface{}
 	err = json.Unmarshal(respBody, &responseJSON)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error occurred while unmarshalling response body:": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, responseJSON)
 }
 
-func NewHandler(service service.Service) Handler {
+func NewHandler(t *template.Template, service service.Service) Handler {
 	return &handler{
-		service: service,
+		t:        t,
+		service:  service,
+		template: "translate.html",
 	}
 }

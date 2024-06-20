@@ -1,7 +1,9 @@
 package main
 
 import (
+	"embed"
 	"fmt"
+	"html/template"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -11,24 +13,25 @@ import (
 	"github.com/ai-model-app/service"
 )
 
+//go:embed templates/*
+var resources embed.FS
+
+var t = template.Must(template.ParseFS(resources, "templates/*"))
+
 func main() {
 	fmt.Println("AI MODEL APP")
 	godotenv.Load()
-
-	// Read token in .env file
 	token := os.Getenv("HUGGINGFACE_TOKEN")
 
 	service := service.NewService(token)
-	handler := handler.NewHandler(service)
+	handler := handler.NewHandler(t, service)
 
 	r := gin.Default()
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "pong",
-		})
+	r.GET("/", func(c *gin.Context) {
+		t.ExecuteTemplate(c.Writer, "index.html", nil)
 	})
 
 	r.POST("/mask", handler.MaskModel)
-	r.POST("/translate", handler.TranslateModel)
+	r.GET("/translate", handler.TranslateModel)
 	r.Run()
 }
